@@ -19,8 +19,6 @@ public class Server extends Thread {
     private static short ERROR_OPCODE = 5;
 
     private ExecutorService pool;
-    private DatagramSocket socket;
-    private byte[] buffer;
 
     private static class TFTPPacket {
         enum Operation { READ, WRITE, DATA, ACK, ERROR }
@@ -241,35 +239,33 @@ public class Server extends Thread {
         }
     }
 
-
     public Server(int numThreads) {
         this.pool = Executors.newFixedThreadPool(numThreads);
-        try {
-            this.socket = new DatagramSocket(TFTP_PORT, InetAddress.getLocalHost());
+    }
+
+    public void run() {
+        try (DatagramSocket socket = new DatagramSocket(TFTP_PORT, InetAddress.getLocalHost())) {
+            byte[] buffer = new byte[MAX_REQUEST_SIZE];
+            while (true) {
+                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                try {
+                    socket.receive(packet);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.exit(-1);
+                }
+
+                InetAddress addr = packet.getAddress();
+                int port = packet.getPort();
+                byte[] data = packet.getData();
+                RequestPacket reqPacket = new RequestPacket(addr, port, data, packet.getLength());
+                this.pool.execute(new RequestHandler(reqPacket));
+            }
         } catch (SocketException se) {
             throw new RuntimeException(se.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(-1);
-        }
-        this.buffer = new byte[MAX_REQUEST_SIZE];
-    }
-
-    public void run() {
-        while (true) {
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-            try {
-                socket.receive(packet);
-            } catch (Exception e) {
-                e.printStackTrace();
-                System.exit(-1);
-            }
-
-            InetAddress addr = packet.getAddress();
-            int port = packet.getPort();
-            byte[] data = packet.getData();
-            RequestPacket reqPacket = new RequestPacket(addr, port, data, packet.getLength());
-            this.pool.execute(new RequestHandler(reqPacket));
         }
     }
 
